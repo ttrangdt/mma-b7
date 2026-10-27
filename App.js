@@ -28,7 +28,7 @@ import { getCurrentLocationAndAddress } from './services/locationService';
 import { generateImageDescription } from './services/geminiService';
 import { CONFIG } from './config';
 
-import MapView, { Marker, Callout } from 'react-native-maps';
+import MapView, { Marker, Callout } from './components/MapWrapper';
 
 import PhotoCard from './components/PhotoCard';
 import PhotoDetailModal from './components/PhotoDetailModal';

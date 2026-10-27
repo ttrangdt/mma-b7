@@ -13,7 +13,7 @@ import {
   Alert 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import MapView, { Marker } from 'react-native-maps';
+import MapView, { Marker } from './MapWrapper';
 import { THEME } from '../constants/theme';
 
 const { width } = Dimensions.get('window');

@@ -39,21 +39,31 @@ export default function PhotoDetailModal({ photo, visible, onClose, onDelete }) 
   };
 
   const handleDelete = () => {
-    Alert.alert(
-      'Xóa ảnh kỷ niệm',
-      'Bạn có chắc chắn muốn xóa ảnh này khỏi danh sách?',
-      [
-        { text: 'Hủy', style: 'cancel' },
-        { 
-          text: 'Xóa', 
-          style: 'destructive',
-          onPress: () => {
-            onDelete(photo.id);
-            onClose();
-          } 
-        },
-      ]
-    );
+    if (Platform.OS === 'web') {
+      const confirmed = typeof window !== 'undefined'
+        ? window.confirm('Bạn có chắc chắn muốn xóa ảnh này khỏi danh sách?')
+        : true;
+      if (confirmed) {
+        onDelete(photo.id);
+        onClose();
+      }
+    } else {
+      Alert.alert(
+        'Xóa ảnh kỷ niệm',
+        'Bạn có chắc chắn muốn xóa ảnh này khỏi danh sách?',
+        [
+          { text: 'Hủy', style: 'cancel' },
+          { 
+            text: 'Xóa', 
+            style: 'destructive',
+            onPress: () => {
+              onDelete(photo.id);
+              onClose();
+            } 
+          },
+        ]
+      );
+    }
   };
 
   return (

@@ -206,21 +206,30 @@ export default function App() {
    */
   const handleClearAll = () => {
     if (photos.length === 0) return;
-    Alert.alert(
-      'Xóa toàn bộ ảnh',
-      'Bạn có chắc muốn xóa sạch toàn bộ lịch sử ảnh kỷ niệm không?',
-      [
-        { text: 'Hủy', style: 'cancel' },
-        { 
-          text: 'Xóa hết', 
-          style: 'destructive',
-          onPress: async () => {
-            await clearAllPhotos();
-            setPhotos([]);
+    if (Platform.OS === 'web') {
+      const confirmed = typeof window !== 'undefined'
+        ? window.confirm('Bạn có chắc muốn xóa sạch toàn bộ lịch sử ảnh kỷ niệm không?')
+        : true;
+      if (confirmed) {
+        clearAllPhotos().then(() => setPhotos([]));
+      }
+    } else {
+      Alert.alert(
+        'Xóa toàn bộ ảnh',
+        'Bạn có chắc muốn xóa sạch toàn bộ lịch sử ảnh kỷ niệm không?',
+        [
+          { text: 'Hủy', style: 'cancel' },
+          { 
+            text: 'Xóa hết', 
+            style: 'destructive',
+            onPress: async () => {
+              await clearAllPhotos();
+              setPhotos([]);
+            }
           }
-        }
-      ]
-    );
+        ]
+      );
+    }
   };
 
   return (

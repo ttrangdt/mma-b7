@@ -1,22 +1,31 @@
 import React from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, Image, TouchableOpacity, StyleSheet, Alert, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../constants/theme';
 
 export default function PhotoCard({ photo, onPress, onDelete }) {
   const handleDelete = () => {
-    Alert.alert(
-      'Xác nhận xóa',
-      'Bạn có chắc chắn muốn xóa bức ảnh kỷ niệm này không?',
-      [
-        { text: 'Hủy', style: 'cancel' },
-        { 
-          text: 'Xóa ngay', 
-          style: 'destructive',
-          onPress: () => onDelete(photo.id) 
-        },
-      ]
-    );
+    if (Platform.OS === 'web') {
+      const confirmed = typeof window !== 'undefined' 
+        ? window.confirm('Bạn có chắc chắn muốn xóa bức ảnh kỷ niệm này không?')
+        : true;
+      if (confirmed) {
+        onDelete(photo.id);
+      }
+    } else {
+      Alert.alert(
+        'Xác nhận xóa',
+        'Bạn có chắc chắn muốn xóa bức ảnh kỷ niệm này không?',
+        [
+          { text: 'Hủy', style: 'cancel' },
+          { 
+            text: 'Xóa ngay', 
+            style: 'destructive',
+            onPress: () => onDelete(photo.id) 
+          },
+        ]
+      );
+    }
   };
 
   const formattedDate = new Date(photo.timestamp).toLocaleDateString('vi-VN', {
@@ -71,7 +80,10 @@ export default function PhotoCard({ photo, onPress, onDelete }) {
 
           <TouchableOpacity 
             style={styles.deleteBtn} 
-            onPress={handleDelete}
+            onPress={(e) => {
+              e?.stopPropagation?.();
+              handleDelete();
+            }}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <Ionicons name="trash-outline" size={18} color={THEME.colors.danger} />

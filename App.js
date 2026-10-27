@@ -26,6 +26,7 @@ import {
 } from './services/storageService';
 import { getCurrentLocationAndAddress } from './services/locationService';
 import { generateImageDescription } from './services/geminiService';
+import { CONFIG } from './config';
 
 import MapView, { Marker, Callout } from 'react-native-maps';
 
@@ -37,7 +38,7 @@ const { width } = Dimensions.get('window');
 
 export default function App() {
   const [photos, setPhotos] = useState([]);
-  const [apiKey, setApiKey] = useState('');
+  const [apiKey, setApiKey] = useState(CONFIG.GEMINI_API_KEY || '');
   const [activeTab, setActiveTab] = useState('gallery'); // 'gallery' | 'map'
   const [selectedPhoto, setSelectedPhoto] = useState(null);
   const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
@@ -59,6 +60,8 @@ export default function App() {
       const storedKey = await getStoredApiKey();
       if (storedKey) {
         setApiKey(storedKey);
+      } else if (CONFIG.GEMINI_API_KEY) {
+        setApiKey(CONFIG.GEMINI_API_KEY);
       }
     } catch (e) {
       console.error('Lỗi khởi tạo ứng dụng:', e);

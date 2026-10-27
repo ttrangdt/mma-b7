@@ -10,7 +10,7 @@ const DEFAULT_COORDS = {
 /**
  * Yêu cầu quyền vị trí và lấy tọa độ GPS hiện tại kèm địa chỉ thân thiện
  */
-export const getCurrentLocationAndAddress = async () => {
+export const getCurrentLocationAndAddress = async (vietmapApiKey = '') => {
   try {
     const { status } = await Location.requestForegroundPermissionsAsync();
     
@@ -30,24 +30,45 @@ export const getCurrentLocationAndAddress = async () => {
     const { latitude, longitude } = position.coords;
     let address = 'Không xác định được địa chỉ cụ thể';
 
-    try {
-      const reverseList = await Location.reverseGeocodeAsync({ latitude, longitude });
-      if (reverseList && reverseList.length > 0) {
-        const item = reverseList[0];
-        const parts = [
-          item.name || item.street,
-          item.district || item.subregion,
-          item.city || item.region,
-          item.country,
-        ].filter(Boolean);
-        
-        if (parts.length > 0) {
-          address = parts.join(', ');
+    // 1. Nếu có VietMap API Key, sử dụng VietMap Reverse Geocode chuẩn Việt Nam
+    if (vietmapApiKey && vietmapApiKey.trim() !== '') {
+      try {
+        const vmUrl = `https://maps.vietmap.vn/api/reverse/v3?apikey=${vietmapApiKey.trim()}&lat=${latitude}&lng=${longitude}`;
+        const vmRes = await fetch(vmUrl);
+        const vmData = await vmRes.json();
+        if (Array.isArray(vmData) && vmData.length > 0 && vmData[0].address) {
+          address = vmData[0].address;
+        } else if (vmData?.data?.[0]?.address) {
+          address = vmData.data[0].address;
+        } else if (vmData?.address) {
+          address = vmData.address;
         }
+      } catch (vmErr) {
+        console.warn('Lỗi VietMap reverse geocode, fallback expo-location:', vmErr);
       }
-    } catch (geocodeErr) {
-      console.warn('Lỗi reverse geocode:', geocodeErr);
-      address = `Tọa độ: ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+    }
+
+    // 2. Fallback sang Expo Location Reverse Geocode nếu chưa có địa chỉ VietMap
+    if (address === 'Không xác định được địa chỉ cụ thể') {
+      try {
+        const reverseList = await Location.reverseGeocodeAsync({ latitude, longitude });
+        if (reverseList && reverseList.length > 0) {
+          const item = reverseList[0];
+          const parts = [
+            item.name || item.street,
+            item.district || item.subregion,
+            item.city || item.region,
+            item.country,
+          ].filter(Boolean);
+          
+          if (parts.length > 0) {
+            address = parts.join(', ');
+          }
+        }
+      } catch (geocodeErr) {
+        console.warn('Lỗi reverse geocode:', geocodeErr);
+        address = `Tọa độ: ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+      }
     }
 
     return {

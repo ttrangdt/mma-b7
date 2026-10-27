@@ -13,12 +13,20 @@ import {
   Alert 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import MapView, { Marker } from './MapWrapper';
+import MapView, { Marker, UrlTile } from './MapWrapper';
 import { THEME } from '../constants/theme';
 
 const { width } = Dimensions.get('window');
 
-export default function PhotoDetailModal({ photo, visible, onClose, onDelete }) {
+export default function PhotoDetailModal({ 
+  photo, 
+  visible, 
+  onClose, 
+  onDelete, 
+  vietmapKey, 
+  onRegenerateAI, 
+  isGeneratingAI 
+}) {
   if (!photo) return null;
 
   const lat = photo.location?.latitude || 21.0124167;
@@ -95,21 +103,40 @@ export default function PhotoDetailModal({ photo, visible, onClose, onDelete }) 
           {/* Khối mô tả của Gemini AI */}
           <View style={styles.aiBox}>
             <View style={styles.aiBoxHeader}>
-              <Ionicons name="sparkles" size={18} color={THEME.colors.accent} />
-              <Text style={styles.aiBoxTitle}>Gemini AI phân tích hình ảnh</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                <Ionicons name="sparkles" size={18} color={THEME.colors.accent} />
+                <Text style={styles.aiBoxTitle}>Gemini AI phân tích hình ảnh</Text>
+              </View>
+              {onRegenerateAI && (
+                <TouchableOpacity 
+                  onPress={() => onRegenerateAI(photo)}
+                  disabled={isGeneratingAI}
+                  style={styles.retryAiBtn}
+                >
+                  <Ionicons name="refresh" size={13} color={THEME.colors.accent} />
+                  <Text style={styles.retryAiText}>Phân tích lại</Text>
+                </TouchableOpacity>
+              )}
             </View>
             <Text style={styles.aiBoxContent}>{photo.description}</Text>
           </View>
 
-          {/* Khối vị trí và Google Maps */}
+          {/* Khối vị trí và Google Maps / VietMap */}
           <View style={styles.mapSection}>
             <View style={styles.mapSectionHeader}>
               <View style={styles.mapHeaderLeft}>
                 <Ionicons name="location" size={20} color={THEME.colors.primary} />
-                <Text style={styles.mapSectionTitle}>Vị trí chụp trên Google Maps</Text>
+                <Text style={styles.mapSectionTitle}>
+                  {vietmapKey ? 'Bản đồ VietMap' : 'Bản đồ vị trí chụp'}
+                </Text>
+                {vietmapKey ? (
+                  <View style={styles.vietmapBadge}>
+                    <Text style={styles.vietmapBadgeText}>VietMap Tile</Text>
+                  </View>
+                ) : null}
               </View>
               <TouchableOpacity onPress={openGoogleMapsExternal} style={styles.extMapLink}>
-                <Text style={styles.extMapText}>Mở app Maps</Text>
+                <Text style={styles.extMapText}>Mở Maps</Text>
                 <Ionicons name="open-outline" size={14} color={THEME.colors.primary} />
               </TouchableOpacity>
             </View>
@@ -119,7 +146,7 @@ export default function PhotoDetailModal({ photo, visible, onClose, onDelete }) 
               Tọa độ: {lat.toFixed(6)}, {lng.toFixed(6)}
             </Text>
 
-            {/* Google Map View */}
+            {/* Map View với VietMap Tile layer */}
             <View style={styles.mapContainer}>
               {MapView && Marker && Platform.OS !== 'web' ? (
                 <MapView
@@ -133,6 +160,14 @@ export default function PhotoDetailModal({ photo, visible, onClose, onDelete }) 
                   scrollEnabled={false}
                   zoomEnabled={false}
                 >
+                  {vietmapKey && vietmapKey.trim() !== '' ? (
+                    <UrlTile
+                      urlTemplate={`https://maps.vietmap.vn/api/tm/{z}/{x}/{y}@2x.png?apikey=${vietmapKey.trim()}`}
+                      maximumZ={19}
+                      flipY={false}
+                      zIndex={1}
+                    />
+                  ) : null}
                   <Marker
                     coordinate={{ latitude: lat, longitude: lng }}
                     title="Vị trí bức ảnh"
@@ -230,13 +265,29 @@ const styles = StyleSheet.create({
   aiBoxHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'space-between',
     marginBottom: 8,
   },
   aiBoxTitle: {
     color: THEME.colors.accent,
     fontSize: 14,
     fontWeight: '700',
+  },
+  retryAiBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: THEME.borderRadius.sm,
+    backgroundColor: 'rgba(168, 85, 247, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(168, 85, 247, 0.3)',
+  },
+  retryAiText: {
+    color: THEME.colors.accent,
+    fontSize: 11,
+    fontWeight: '600',
   },
   aiBoxContent: {
     color: THEME.colors.text,
@@ -260,6 +311,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flex: 1,
+  },
+  vietmapBadge: {
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: THEME.borderRadius.sm,
+    borderWidth: 1,
+    borderColor: THEME.colors.success,
+  },
+  vietmapBadgeText: {
+    color: THEME.colors.success,
+    fontSize: 10,
+    fontWeight: '700',
   },
   mapSectionTitle: {
     color: THEME.colors.text,

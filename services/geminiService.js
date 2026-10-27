@@ -54,9 +54,53 @@ export const generateImageDescription = async (base64Data, apiKey, mimeType = 'i
     },
   };
 
+  // 1. Kiểm tra tính hợp lệ của API Key bằng ListModels để chẩn đoán chính xác
+  try {
+    const checkRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey.trim()}`);
+    const checkData = await checkRes.json();
+
+    if (checkData?.error) {
+      const errCode = checkData.error.code;
+      const errMsg = checkData.error.message || '';
+      if (errCode === 400 || errCode === 401 || errMsg.includes('API key not valid')) {
+        throw new Error('API Key không hợp lệ. Vui lòng vào aistudio.google.com/app/apikey và tạo API Key mới dạng AIzaSy...');
+      }
+      if (errCode === 403 || errMsg.includes('PERMISSION_DENIED')) {
+        throw new Error('API Key này chưa có quyền Generative Language. Vui lòng vào aistudio.google.com/app/apikey và chọn "Create API key in new project".');
+      }
+      throw new Error(`Lỗi xác thực API Key (${errCode}): ${errMsg}`);
+    }
+
+    // Nếu ListModels thành công, lấy model khả dụng có hỗ trợ generateContent
+    if (checkData?.models && Array.isArray(checkData.models)) {
+      const supported = checkData.models.filter(m => m.supportedGenerationMethods?.includes('generateContent'));
+      const chosen = supported.find(m => m.name.includes('flash')) || supported.find(m => m.name.includes('pro')) || supported[0];
+      if (chosen) {
+        const cleanName = chosen.name.replace('models/', '');
+        const directUrl = `https://generativelanguage.googleapis.com/v1beta/models/${cleanName}:generateContent?key=${apiKey.trim()}`;
+        const directRes = await fetch(directUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody),
+        });
+        const directData = await directRes.json();
+        const text = directData?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) {
+          return text.trim();
+        }
+      }
+    }
+  } catch (checkErr) {
+    if (checkErr.message.includes('API Key') || checkErr.message.includes('aistudio.google.com')) {
+      throw checkErr;
+    }
+    console.warn('Không thể kiểm tra ListModels, chuyển sang thử danh sách tĩnh:', checkErr);
+  }
+
+  // 2. Thử lần lượt các endpoint tĩnh nếu bước trên chưa trả về
   const CANDIDATES = [
-    { version: 'v1', model: 'gemini-1.5-flash' },
     { version: 'v1beta', model: 'gemini-1.5-flash' },
+    { version: 'v1', model: 'gemini-1.5-flash' },
     { version: 'v1beta', model: 'gemini-2.0-flash' },
     { version: 'v1beta', model: 'gemini-2.5-flash' },
     { version: 'v1', model: 'gemini-1.5-pro' },
@@ -80,7 +124,7 @@ export const generateImageDescription = async (base64Data, apiKey, mimeType = 'i
       if (!response.ok) {
         const errorMsg = data?.error?.message || `Lỗi từ Gemini API (${response.status})`;
         lastError = new Error(errorMsg);
-        continue; // Thử model/version tiếp theo
+        continue;
       }
 
       const candidate = data.candidates?.[0];

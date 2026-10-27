@@ -51,6 +51,8 @@ export const Callout = ({ children }) => {
   return <View style={styles.calloutWrapper}>{children}</View>;
 };
 
+export const UrlTile = () => null;
+
 const styles = StyleSheet.create({
   container: {
     backgroundColor: '#0F172A',

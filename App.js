@@ -22,13 +22,14 @@ import {
   savePhoto, 
   deletePhoto, 
   clearAllPhotos, 
-  getStoredApiKey 
+  getStoredApiKey,
+  getStoredVietmapKey 
 } from './services/storageService';
 import { getCurrentLocationAndAddress } from './services/locationService';
 import { generateImageDescription } from './services/geminiService';
 import { CONFIG } from './config';
 
-import MapView, { Marker, Callout } from './components/MapWrapper';
+import MapView, { Marker, Callout, UrlTile } from './components/MapWrapper';
 
 import PhotoCard from './components/PhotoCard';
 import PhotoDetailModal from './components/PhotoDetailModal';
@@ -39,6 +40,7 @@ const { width } = Dimensions.get('window');
 export default function App() {
   const [photos, setPhotos] = useState([]);
   const [apiKey, setApiKey] = useState(CONFIG.GEMINI_API_KEY || '');
+  const [vietmapKey, setVietmapKey] = useState(CONFIG.VIETMAP_API_KEY || '');
   const [activeTab, setActiveTab] = useState('gallery'); // 'gallery' | 'map'
   const [selectedPhoto, setSelectedPhoto] = useState(null);
   const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
@@ -63,6 +65,13 @@ export default function App() {
       } else if (CONFIG.GEMINI_API_KEY) {
         setApiKey(CONFIG.GEMINI_API_KEY);
       }
+
+      const storedVmKey = await getStoredVietmapKey();
+      if (storedVmKey) {
+        setVietmapKey(storedVmKey);
+      } else if (CONFIG.VIETMAP_API_KEY) {
+        setVietmapKey(CONFIG.VIETMAP_API_KEY);
+      }
     } catch (e) {
       console.error('Lỗi khởi tạo ứng dụng:', e);
     }
@@ -75,9 +84,9 @@ export default function App() {
     try {
       setIsProcessing(true);
       
-      // Bước 1: Lấy vị trí GPS & Địa chỉ
-      setProcessingStatus('Đang lấy vị trí chụp ảnh (GPS)...');
-      const locationData = await getCurrentLocationAndAddress();
+      // Bước 1: Lấy vị trí GPS & Địa chỉ (kèm VietMap nếu có)
+      setProcessingStatus('Đang lấy vị trí chụp ảnh (GPS & VietMap)...');
+      const locationData = await getCurrentLocationAndAddress(vietmapKey);
 
       // Bước 2: Gọi Gemini AI phân tích hình ảnh
       setProcessingStatus('Gemini AI đang phân tích và sinh mô tả...');
@@ -132,6 +141,60 @@ export default function App() {
       setProcessingStatus('');
       console.error('Lỗi xử lý ảnh:', error);
       Alert.alert('Lỗi', error.message || 'Có lỗi xảy ra khi xử lý ảnh.');
+    }
+  };
+
+  /**
+   * Phân tích lại bức ảnh bằng Gemini AI
+   */
+  const handleRegenerateAI = async (photoItem) => {
+    if (!apiKey || apiKey.trim() === '') {
+      if (Platform.OS === 'web') {
+        window.alert('Vui lòng nhấn nút "Cài đặt" ở góc trên để cấu hình Gemini API Key trước.');
+      } else {
+        Alert.alert('Chưa có Key', 'Vui lòng nhấn nút "Cài đặt" ở góc trên để cấu hình Gemini API Key trước.');
+      }
+      return;
+    }
+
+    try {
+      setIsProcessing(true);
+      setProcessingStatus('Gemini AI đang phân tích lại hình ảnh...');
+
+      let base64Data = photoItem.uri;
+      if (!photoItem.uri.startsWith('data:image')) {
+        const resp = await fetch(photoItem.uri);
+        const blob = await resp.blob();
+        base64Data = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      }
+
+      const newDesc = await generateImageDescription(base64Data, apiKey);
+
+      const updatedList = photos.map((p) => 
+        p.id === photoItem.id ? { ...p, description: newDesc } : p
+      );
+      setPhotos(updatedList);
+      setSelectedPhoto((prev) => prev ? { ...prev, description: newDesc } : null);
+
+      // Lưu lại vào storage
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+      await AsyncStorage.setItem('@ai_photo_memories_photos', JSON.stringify(updatedList));
+
+      setIsProcessing(false);
+      setProcessingStatus('');
+    } catch (err) {
+      setIsProcessing(false);
+      setProcessingStatus('');
+      if (Platform.OS === 'web') {
+        window.alert(`Lỗi AI: ${err.message}`);
+      } else {
+        Alert.alert('Lỗi AI', err.message);
+      }
     }
   };
 
@@ -352,6 +415,14 @@ export default function App() {
                   showsUserLocation={true}
                   showsMyLocationButton={true}
                 >
+                  {vietmapKey && vietmapKey.trim() !== '' ? (
+                    <UrlTile
+                      urlTemplate={`https://maps.vietmap.vn/api/tm/{z}/{x}/{y}@2x.png?apikey=${vietmapKey.trim()}`}
+                      maximumZ={19}
+                      flipY={false}
+                      zIndex={1}
+                    />
+                  ) : null}
                   {photos.map((item) => (
                     <Marker
                       key={item.id}
@@ -427,14 +498,19 @@ export default function App() {
           photo={selectedPhoto}
           onClose={() => setSelectedPhoto(null)}
           onDelete={handleDeletePhoto}
+          vietmapKey={vietmapKey}
+          onRegenerateAI={handleRegenerateAI}
+          isGeneratingAI={isProcessing}
         />
 
-        {/* Modal nhập Gemini API Key */}
+        {/* Modal nhập Gemini & VietMap API Key */}
         <ApiKeyModal
           visible={isKeyModalOpen}
           currentKey={apiKey}
+          currentVietmapKey={vietmapKey}
           onClose={() => setIsKeyModalOpen(false)}
           onKeySaved={(newKey) => setApiKey(newKey)}
+          onVietmapKeySaved={(newVmKey) => setVietmapKey(newVmKey)}
         />
 
         {/* Loading Overlay khi xử lý GPS và AI */}

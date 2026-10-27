@@ -54,42 +54,45 @@ export const generateImageDescription = async (base64Data, apiKey, mimeType = 'i
     },
   };
 
-  const callEndpoint = async (modelName) => {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey.trim()}`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody),
-    });
+  const CANDIDATES = [
+    { version: 'v1', model: 'gemini-1.5-flash' },
+    { version: 'v1beta', model: 'gemini-1.5-flash' },
+    { version: 'v1beta', model: 'gemini-2.0-flash' },
+    { version: 'v1beta', model: 'gemini-2.5-flash' },
+    { version: 'v1', model: 'gemini-1.5-pro' },
+  ];
 
-    const data = await response.json();
+  let lastError = null;
 
-    if (!response.ok) {
-      const errorMsg = data?.error?.message || `Lỗi từ Gemini API (Mã: ${response.status})`;
-      throw new Error(errorMsg);
-    }
-
-    const candidate = data.candidates?.[0];
-    const text = candidate?.content?.parts?.[0]?.text;
-
-    if (!text) {
-      throw new Error('Gemini không phản hồi văn bản mô tả nào.');
-    }
-
-    return text.trim();
-  };
-
-  try {
-    return await callEndpoint(PRIMARY_MODEL);
-  } catch (primaryError) {
-    console.warn(`Lỗi với model ${PRIMARY_MODEL}, thử với ${FALLBACK_MODEL}:`, primaryError);
+  for (const item of CANDIDATES) {
     try {
-      return await callEndpoint(FALLBACK_MODEL);
-    } catch (fallbackError) {
-      console.error('Cả 2 model đều thất bại:', fallbackError);
-      throw new Error(primaryError.message || fallbackError.message);
+      const url = `https://generativelanguage.googleapis.com/${item.version}/models/${item.model}:generateContent?key=${apiKey.trim()}`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        const errorMsg = data?.error?.message || `Lỗi từ Gemini API (${response.status})`;
+        lastError = new Error(errorMsg);
+        continue; // Thử model/version tiếp theo
+      }
+
+      const candidate = data.candidates?.[0];
+      const text = candidate?.content?.parts?.[0]?.text;
+
+      if (text) {
+        return text.trim();
+      }
+    } catch (err) {
+      lastError = err;
     }
   }
+
+  throw lastError || new Error('Không thể kết nối với các model của Gemini API.');
 };

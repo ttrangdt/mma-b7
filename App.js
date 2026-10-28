@@ -1,786 +1,778 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
-  Text,
   View,
+  Text,
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  SafeAreaView,
   StatusBar,
-  Dimensions,
+  Modal,
   Platform,
-  Image,
 } from 'react-native';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
+import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 
-import { THEME } from './constants/theme';
-import { 
-  getStoredPhotos, 
-  savePhoto, 
-  deletePhoto, 
-  clearAllPhotos, 
-  getStoredApiKey 
-} from './services/storageService';
-import { getCurrentLocationAndAddress } from './services/locationService';
-import { generateImageDescription } from './services/geminiService';
-import { CONFIG } from './config';
+// Services
+import {
+  getPhotos,
+  addPhoto,
+  deletePhoto,
+  updatePhoto,
+  clearAllPhotos,
+} from './src/services/storageService';
+import { getCurrentLocation } from './src/services/locationService';
+import { generateImageDescription } from './src/services/geminiService';
 
-import MapView, { Marker, Callout } from './components/MapWrapper';
-
-import PhotoCard from './components/PhotoCard';
-import PhotoDetailModal from './components/PhotoDetailModal';
-import ApiKeyModal from './components/ApiKeyModal';
-
-const { width } = Dimensions.get('window');
+// Components
+import PhotoCard from './src/components/PhotoCard';
+import PhotoDetailModal from './src/components/PhotoDetailModal';
+import OverviewMapView from './src/components/OverviewMapView';
+import ApiKeyModal from './src/components/ApiKeyModal';
 
 export default function App() {
   const [photos, setPhotos] = useState([]);
-  const [apiKey, setApiKey] = useState(CONFIG.GEMINI_API_KEY || '');
-  const [activeTab, setActiveTab] = useState('gallery'); // 'gallery' | 'map'
+  const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('list'); // 'list' | 'map'
   const [selectedPhoto, setSelectedPhoto] = useState(null);
-  const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
-
-  // Trạng thái xử lý chụp và gọi AI
+  const [detailVisible, setDetailVisible] = useState(false);
+  const [apiKeyModalVisible, setApiKeyModalVisible] = useState(false);
+  const [captureModalVisible, setCaptureModalVisible] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState('');
 
-  // Tải danh sách ảnh và API Key khi khởi chạy app
+  // Tải danh sách ảnh từ AsyncStorage khi khởi động app
   useEffect(() => {
-    loadInitialData();
+    loadSavedPhotos();
   }, []);
 
-  const loadInitialData = async () => {
+  const loadSavedPhotos = async () => {
     try {
-      const storedPhotos = await getStoredPhotos();
-      setPhotos(storedPhotos);
-
-      const storedKey = await getStoredApiKey();
-      if (storedKey) {
-        setApiKey(storedKey);
-      } else if (CONFIG.GEMINI_API_KEY) {
-        setApiKey(CONFIG.GEMINI_API_KEY);
-      }
+      setIsLoading(true);
+      const list = await getPhotos();
+      setPhotos(list);
     } catch (e) {
-      console.error('Lỗi khởi tạo ứng dụng:', e);
+      console.error('Lỗi khi tải ảnh:', e);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   /**
-   * Xử lý sau khi người dùng chọn hoặc chụp ảnh thành công
+   * Xử lý luồng sau khi chụp hoặc chọn ảnh
    */
-  const processCapturedImage = async (asset) => {
-    try {
-      setIsProcessing(true);
-      
-      // Bước 1: Lấy vị trí GPS & Địa chỉ
-      setProcessingStatus('Đang lấy vị trí chụp ảnh (GPS)...');
-      const locationData = await getCurrentLocationAndAddress();
-
-      // Bước 2: Gọi Gemini AI phân tích hình ảnh
-      setProcessingStatus('Gemini AI đang phân tích và sinh mô tả...');
-      let description = '';
-
-      if (apiKey && apiKey.trim() !== '') {
-        try {
-          description = await generateImageDescription(asset.base64, apiKey);
-        } catch (aiErr) {
-          console.warn('Lỗi phân tích Gemini AI:', aiErr);
-          description = `[Thông báo AI: ${aiErr.message || 'Không thể tạo mô tả'}]. Ảnh chụp tại ${locationData.address}.`;
-        }
-      } else {
-        description = `Ảnh được chụp tại ${locationData.address}. Chưa cấu hình Gemini API Key nên mô tả tự động chưa được bật.`;
-      }
-
-      // Bước 3: Lưu vào AsyncStorage
-      setProcessingStatus('Đang lưu vào bộ nhớ thiết bị...');
-      const newPhotoItem = {
-        id: Date.now().toString(),
-        uri: asset.uri,
-        timestamp: new Date().toISOString(),
-        location: {
-          latitude: locationData.latitude,
-          longitude: locationData.longitude,
-          address: locationData.address,
-        },
-        description: description,
-      };
-
-      const updatedList = await savePhoto(newPhotoItem);
-      setPhotos(updatedList);
-
-      setIsProcessing(false);
-      setProcessingStatus('');
-
-      // Mở modal xem chi tiết bức ảnh vừa tạo
-      setSelectedPhoto(newPhotoItem);
-
-      if (!apiKey) {
-        Alert.alert(
-          'Gợi ý cấu hình AI',
-          'Bạn chưa nhập Gemini API Key. Nhấn vào icon Cài đặt (bánh răng) ở góc trên để nhập key và kích hoạt mô tả thông minh.',
-          [
-            { text: 'Để sau', style: 'cancel' },
-            { text: 'Nhập Key ngay', onPress: () => setIsKeyModalOpen(true) }
-          ]
-        );
-      }
-    } catch (error) {
-      setIsProcessing(false);
-      setProcessingStatus('');
-      console.error('Lỗi xử lý ảnh:', error);
-      Alert.alert('Lỗi', error.message || 'Có lỗi xảy ra khi xử lý ảnh.');
-    }
-  };
-
-  /**
-   * Phân tích lại bức ảnh bằng Gemini AI
-   */
-  const handleRegenerateAI = async (photoItem) => {
-    if (!apiKey || apiKey.trim() === '') {
-      if (Platform.OS === 'web') {
-        window.alert('Vui lòng nhấn nút "Cài đặt" ở góc trên để cấu hình Gemini API Key trước.');
-      } else {
-        Alert.alert('Chưa có Key', 'Vui lòng nhấn nút "Cài đặt" ở góc trên để cấu hình Gemini API Key trước.');
-      }
+  const processImage = async (pickerResult) => {
+    if (pickerResult.canceled || !pickerResult.assets || pickerResult.assets.length === 0) {
       return;
     }
 
+    const asset = pickerResult.assets[0];
+    const imageUri = asset.uri;
+    const base64Data = asset.base64;
+
+    setCaptureModalVisible(false);
+    setIsProcessing(true);
+    setProcessingStatus('Đang lấy toạ độ vị trí GPS...');
+
+    // 1. Lấy vị trí toạ độ địa lý lúc chụp
+    let locationData = null;
     try {
-      setIsProcessing(true);
-      setProcessingStatus('Gemini AI đang phân tích lại hình ảnh...');
-
-      let base64Data = photoItem.uri;
-      if (!photoItem.uri.startsWith('data:image')) {
-        const resp = await fetch(photoItem.uri);
-        const blob = await resp.blob();
-        base64Data = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result);
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-      }
-
-      const newDesc = await generateImageDescription(base64Data, apiKey);
-
-      const updatedList = photos.map((p) => 
-        p.id === photoItem.id ? { ...p, description: newDesc } : p
-      );
-      setPhotos(updatedList);
-      setSelectedPhoto((prev) => prev ? { ...prev, description: newDesc } : null);
-
-      // Lưu lại vào storage
-      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-      await AsyncStorage.setItem('@ai_photo_memories_photos', JSON.stringify(updatedList));
-
-      setIsProcessing(false);
-      setProcessingStatus('');
-    } catch (err) {
-      setIsProcessing(false);
-      setProcessingStatus('');
-      if (Platform.OS === 'web') {
-        window.alert(`Lỗi AI: ${err.message}`);
-      } else {
-        Alert.alert('Lỗi AI', err.message);
-      }
+      locationData = await getCurrentLocation();
+    } catch (locErr) {
+      console.warn('Không lấy được vị trí:', locErr);
     }
+
+    // 2. Tạo đối tượng ảnh tạm thời
+    const photoId = 'photo_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    const now = Date.now();
+    const defaultTitle = locationData?.address
+      ? `Kỷ niệm tại ${locationData.address.split(',')[0]}`
+      : `Kỷ niệm ${new Date(now).toLocaleDateString('vi-VN')}`;
+
+    setProcessingStatus('Gemini AI đang phân tích và viết mô tả...');
+
+    // 3. Gọi Gemini AI để sinh mô tả
+    let aiDescription = '';
+    let aiStatus = 'idle';
+
+    if (base64Data) {
+      try {
+        const aiResult = await generateImageDescription(base64Data, 'image/jpeg', {
+          address: locationData?.address,
+          timestamp: now,
+        });
+        aiDescription = aiResult.text;
+        aiStatus = aiResult.isFallback ? 'fallback' : 'success';
+      } catch (aiErr) {
+        console.warn('Lỗi phân tích AI:', aiErr);
+        aiDescription = 'Chưa có mô tả cho bức ảnh này.';
+        aiStatus = 'error';
+      }
+    } else {
+      aiDescription = 'Đã lưu ảnh kỷ niệm.';
+    }
+
+    // 4. Lưu ảnh hoàn chỉnh vào AsyncStorage
+    const newPhotoItem = {
+      id: photoId,
+      uri: imageUri,
+      base64: base64Data,
+      title: defaultTitle,
+      description: aiDescription,
+      timestamp: now,
+      location: locationData,
+      aiStatus,
+    };
+
+    const updatedList = await addPhoto(newPhotoItem);
+    if (updatedList) {
+      setPhotos(updatedList);
+      // Mở modal chi tiết để người dùng xem ngay kết quả
+      setSelectedPhoto(newPhotoItem);
+      setDetailVisible(true);
+    }
+
+    setIsProcessing(false);
+    setProcessingStatus('');
   };
 
   /**
-   * Mở camera chụp ảnh trực tiếp
+   * Chụp ảnh mới bằng Camera
    */
   const handleTakePhoto = async () => {
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Cần quyền Camera', 'Vui lòng cấp quyền truy cập máy ảnh để chụp ảnh.');
+        Alert.alert(
+          'Quyền truy cập Camera',
+          'Ứng dụng cần quyền sử dụng máy ảnh để chụp bức ảnh kỷ niệm mới.'
+        );
         return;
       }
 
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        quality: 0.7,
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 0.65,
         base64: true,
       });
 
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        await processCapturedImage(result.assets[0]);
-      }
-    } catch (err) {
-      console.error('Lỗi khi chụp ảnh:', err);
-      Alert.alert('Lỗi', 'Không thể mở máy ảnh.');
+      await processImage(result);
+    } catch (e) {
+      console.error('Lỗi khi chụp ảnh:', e);
+      Alert.alert('Lỗi', 'Không thể khởi động máy ảnh: ' + e.message);
+      setIsProcessing(false);
     }
   };
 
   /**
-   * Chọn ảnh từ thư viện thiết bị
+   * Chọn ảnh có sẵn từ Thư viện
    */
   const handlePickFromGallery = async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Cần quyền Thư viện', 'Vui lòng cấp quyền truy cập bộ sưu tập ảnh.');
+        Alert.alert(
+          'Quyền truy cập Thư viện ảnh',
+          'Vui lòng cấp quyền thư viện để chọn ảnh từ thiết bị.'
+        );
         return;
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        quality: 0.7,
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 0.65,
         base64: true,
       });
 
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        await processCapturedImage(result.assets[0]);
-      }
-    } catch (err) {
-      console.error('Lỗi khi chọn ảnh:', err);
-      Alert.alert('Lỗi', 'Không thể mở bộ sưu tập.');
+      await processImage(result);
+    } catch (e) {
+      console.error('Lỗi khi chọn ảnh:', e);
+      Alert.alert('Lỗi', 'Không thể mở thư viện: ' + e.message);
+      setIsProcessing(false);
     }
   };
 
   /**
-   * Xóa một bức ảnh
+   * Xoá một bức ảnh
    */
-  const handleDeletePhoto = async (id) => {
-    try {
-      const updated = await deletePhoto(id);
-      setPhotos(updated);
-    } catch (error) {
-      Alert.alert('Lỗi', 'Không thể xóa ảnh.');
-    }
-  };
+  const handleDeletePhoto = useCallback((id, title) => {
+    Alert.alert(
+      'Xác nhận xoá ảnh',
+      `Bạn có chắc chắn muốn xoá ảnh "${title || 'này'}" không?`,
+      [
+        { text: 'Huỷ', style: 'cancel' },
+        {
+          text: 'Xoá vĩnh viễn',
+          style: 'destructive',
+          onPress: async () => {
+            const updated = await deletePhoto(id);
+            if (updated) {
+              setPhotos(updated);
+            }
+          },
+        },
+      ]
+    );
+  }, []);
 
   /**
-   * Xóa tất cả ảnh (Reset)
+   * Cập nhật thông tin ảnh
+   */
+  const handleUpdatePhoto = useCallback(async (id, updates) => {
+    const updated = await updatePhoto(id, updates);
+    if (updated) {
+      setPhotos(updated);
+      setSelectedPhoto((prev) => (prev && prev.id === id ? { ...prev, ...updates } : prev));
+    }
+  }, []);
+
+  /**
+   * Xoá toàn bộ ảnh (reset)
    */
   const handleClearAll = () => {
     if (photos.length === 0) return;
-    if (Platform.OS === 'web') {
-      const confirmed = typeof window !== 'undefined'
-        ? window.confirm('Bạn có chắc muốn xóa sạch toàn bộ lịch sử ảnh kỷ niệm không?')
-        : true;
-      if (confirmed) {
-        clearAllPhotos().then(() => setPhotos([]));
-      }
-    } else {
-      Alert.alert(
-        'Xóa toàn bộ ảnh',
-        'Bạn có chắc muốn xóa sạch toàn bộ lịch sử ảnh kỷ niệm không?',
-        [
-          { text: 'Hủy', style: 'cancel' },
-          { 
-            text: 'Xóa hết', 
-            style: 'destructive',
-            onPress: async () => {
-              await clearAllPhotos();
-              setPhotos([]);
-            }
-          }
-        ]
-      );
-    }
+    Alert.alert(
+      'Xoá tất cả ảnh',
+      'Thao tác này sẽ xoá toàn bộ danh sách ảnh kỷ niệm đã lưu trong máy. Bạn có chắc không?',
+      [
+        { text: 'Huỷ', style: 'cancel' },
+        {
+          text: 'Xoá hết',
+          style: 'destructive',
+          onPress: async () => {
+            await clearAllPhotos();
+            setPhotos([]);
+          },
+        },
+      ]
+    );
   };
 
   return (
-    <SafeAreaProvider>
-      <SafeAreaView style={styles.safeContainer} edges={['top', 'left', 'right']}>
-        <StatusBar barStyle="light-content" backgroundColor={THEME.colors.background} />
+    <SafeAreaView style={styles.container}>
+      <ExpoStatusBar style="dark" />
 
-        {/* Thanh Header chính */}
-        <View style={styles.topHeader}>
-          <View style={styles.appBrand}>
-            <View style={styles.brandIconWrap}>
-              <Ionicons name="camera" size={20} color={THEME.colors.primary} />
-            </View>
-            <View>
-              <Text style={styles.brandTitle}>Photo Memories</Text>
-              <Text style={styles.brandSubtitle}>AI Vision & Google Maps</Text>
-            </View>
+      {/* Header thanh công cụ ứng dụng */}
+      <View style={styles.header}>
+        <View style={styles.brandRow}>
+          <View style={styles.brandIconBg}>
+            <Ionicons name="camera-reverse" size={20} color="#ffffff" />
           </View>
+          <View>
+            <Text style={styles.headerTitle}>Photo Memory AI</Text>
+            <Text style={styles.headerSubtitle}>Bản đồ kỷ niệm & Trí tuệ Gemini</Text>
+          </View>
+        </View>
 
-          <View style={styles.headerActions}>
-            {photos.length > 0 && (
-              <TouchableOpacity 
-                style={styles.headerIconBtn} 
-                onPress={handleClearAll}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Ionicons name="trash-bin-outline" size={20} color={THEME.colors.textMuted} />
-              </TouchableOpacity>
-            )}
+        <View style={styles.headerRightActions}>
+          {/* Cài đặt API key */}
+          <TouchableOpacity
+            style={styles.headerIconBtn}
+            onPress={() => setApiKeyModalVisible(true)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="key-outline" size={20} color="#475569" />
+          </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={[styles.headerIconBtn, apiKey ? styles.keyActiveBtn : null]} 
-              onPress={() => setIsKeyModalOpen(true)}
+          {/* Xoá tất cả */}
+          {photos.length > 0 && (
+            <TouchableOpacity
+              style={styles.headerIconBtn}
+              onPress={handleClearAll}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Ionicons 
-                name="sparkles" 
-                size={18} 
-                color={apiKey ? THEME.colors.accent : THEME.colors.textMuted} 
-              />
-              <Text style={[styles.keyBtnLabel, apiKey && { color: THEME.colors.accent }]}>
-                {apiKey ? 'AI Sẵn sàng' : 'Nhập Key'}
-              </Text>
+              <Ionicons name="trash-outline" size={20} color="#94a3b8" />
             </TouchableOpacity>
-          </View>
+          )}
         </View>
+      </View>
 
-        {/* Segmented Control chuyển tab */}
-        <View style={styles.tabBar}>
-          <TouchableOpacity 
-            style={[styles.tabButton, activeTab === 'gallery' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('gallery')}
+      {/* Segmented Tab: Bộ sưu tập / Bản đồ */}
+      <View style={styles.tabContainer}>
+        <TouchableOpacity
+          style={[styles.tabBtn, activeTab === 'list' && styles.tabBtnActive]}
+          onPress={() => setActiveTab('list')}
+          activeOpacity={0.8}
+        >
+          <Ionicons
+            name="images"
+            size={16}
+            color={activeTab === 'list' ? '#ffffff' : '#64748b'}
+          />
+          <Text
+            style={[
+              styles.tabBtnText,
+              activeTab === 'list' && styles.tabBtnTextActive,
+            ]}
           >
-            <Ionicons 
-              name="images-outline" 
-              size={18} 
-              color={activeTab === 'gallery' ? THEME.colors.primary : THEME.colors.textSecondary} 
-            />
-            <Text style={[styles.tabText, activeTab === 'gallery' && styles.tabTextActive]}>
-              Bộ sưu tập ({photos.length})
-            </Text>
-          </TouchableOpacity>
+            Ảnh đã chụp ({photos.length})
+          </Text>
+        </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={[styles.tabButton, activeTab === 'map' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('map')}
+        <TouchableOpacity
+          style={[styles.tabBtn, activeTab === 'map' && styles.tabBtnActive]}
+          onPress={() => setActiveTab('map')}
+          activeOpacity={0.8}
+        >
+          <Ionicons
+            name="map"
+            size={16}
+            color={activeTab === 'map' ? '#ffffff' : '#64748b'}
+          />
+          <Text
+            style={[
+              styles.tabBtnText,
+              activeTab === 'map' && styles.tabBtnTextActive,
+            ]}
           >
-            <Ionicons 
-              name="map-outline" 
-              size={18} 
-              color={activeTab === 'map' ? THEME.colors.primary : THEME.colors.textSecondary} 
-            />
-            <Text style={[styles.tabText, activeTab === 'map' && styles.tabTextActive]}>
-              Bản đồ ký ức
-            </Text>
-          </TouchableOpacity>
+            Bản đồ kỷ niệm
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Nội dung chính tuỳ theo tab */}
+      {isLoading ? (
+        <View style={styles.loadingCenter}>
+          <ActivityIndicator size="large" color="#3b82f6" />
+          <Text style={styles.loadingMainText}>Đang tải bộ sưu tập...</Text>
         </View>
-
-        {/* Nội dung theo Tab */}
-        <View style={styles.mainContent}>
-          {activeTab === 'gallery' ? (
+      ) : activeTab === 'list' ? (
+        <View style={styles.listWrapper}>
+          {photos.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <View style={styles.emptyIconCircle}>
+                <Ionicons name="images-outline" size={54} color="#94a3b8" />
+              </View>
+              <Text style={styles.emptyTitle}>Chưa có ảnh nào được lưu</Text>
+              <Text style={styles.emptyText}>
+                Hãy nhấn nút chụp ảnh bên dưới để ghi lại khoảnh khắc. Ứng dụng
+                sẽ tự động định vị trên bản đồ và dùng Gemini AI sinh mô tả cho bạn!
+              </Text>
+              <TouchableOpacity
+                style={styles.emptyActionBtn}
+                onPress={() => setCaptureModalVisible(true)}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="camera" size={20} color="#ffffff" />
+                <Text style={styles.emptyActionBtnText}>Chụp bức ảnh đầu tiên</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
             <FlatList
               data={photos}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
                 <PhotoCard
                   photo={item}
-                  onPress={(p) => setSelectedPhoto(p)}
+                  onPress={(p) => {
+                    setSelectedPhoto(p);
+                    setDetailVisible(true);
+                  }}
                   onDelete={handleDeletePhoto}
                 />
               )}
-              contentContainerStyle={styles.listContainer}
-              ListEmptyComponent={
-                <View style={styles.emptyContainer}>
-                  <View style={styles.emptyIconCircle}>
-                    <Ionicons name="images-outline" size={48} color={THEME.colors.primary} />
-                  </View>
-                  <Text style={styles.emptyTitle}>Chưa có ảnh nào được lưu</Text>
-                  <Text style={styles.emptyDesc}>
-                    Hãy chụp một bức ảnh mới hoặc chọn từ thư viện. Gemini AI sẽ tự động phân tích và ghim vị trí lên Google Maps!
-                  </Text>
-                  <TouchableOpacity style={styles.emptyCaptureBtn} onPress={handleTakePhoto}>
-                    <Ionicons name="camera" size={18} color={THEME.colors.background} />
-                    <Text style={styles.emptyCaptureBtnText}>Chụp ảnh ngay</Text>
-                  </TouchableOpacity>
-                </View>
-              }
+              contentContainerStyle={styles.flatListContent}
+              showsVerticalScrollIndicator={false}
             />
-          ) : (
-            /* Tab Bản đồ tổng quan hiển thị tất cả các marker */
-            <View style={styles.mapTabWrapper}>
-              {MapView && Marker && Platform.OS !== 'web' ? (
-                <MapView
-                  style={styles.fullMap}
-                  initialRegion={{
-                    latitude: photos[0]?.location?.latitude || 21.0124167,
-                    longitude: photos[0]?.location?.longitude || 105.5207831,
-                    latitudeDelta: 0.15,
-                    longitudeDelta: 0.15,
-                  }}
-                  showsUserLocation={true}
-                  showsMyLocationButton={true}
-                >
-                  {photos.map((item) => (
-                    <Marker
-                      key={item.id}
-                      coordinate={{
-                        latitude: item.location?.latitude || 21.0124167,
-                        longitude: item.location?.longitude || 105.5207831,
-                      }}
-                      title={item.location?.address || 'Ảnh kỷ niệm'}
-                      description={item.description?.slice(0, 50) + '...'}
-                      onCalloutPress={() => setSelectedPhoto(item)}
-                    />
-                  ))}
-                </MapView>
-              ) : (
-                <View style={styles.webMapOverview}>
-                  <Ionicons name="map" size={56} color={THEME.colors.primary} />
-                  <Text style={styles.webMapTitle}>Bản đồ kỷ niệm ảnh</Text>
-                  <Text style={styles.webMapSub}>
-                    Đang có {photos.length} bức ảnh được gắn thẻ vị trí GPS.
-                  </Text>
-                  <FlatList
-                    data={photos}
-                    keyExtractor={(item) => item.id}
-                    style={{ width: '100%', marginTop: 20 }}
-                    renderItem={({ item }) => (
-                      <TouchableOpacity 
-                        style={styles.webMapItem} 
-                        onPress={() => setSelectedPhoto(item)}
-                      >
-                        <Image source={{ uri: item.uri }} style={styles.webMapThumb} />
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.webMapItemAddr} numberOfLines={1}>
-                            {item.location?.address}
-                          </Text>
-                          <Text style={styles.webMapItemCoords}>
-                            {item.location?.latitude?.toFixed(4)}, {item.location?.longitude?.toFixed(4)}
-                          </Text>
-                        </View>
-                        <Ionicons name="chevron-forward" size={18} color={THEME.colors.textMuted} />
-                      </TouchableOpacity>
-                    )}
-                  />
-                </View>
-              )}
-            </View>
           )}
         </View>
-
-        {/* Floating Action Bar bên dưới */}
-        <View style={styles.bottomActionBar}>
-          <TouchableOpacity 
-            style={styles.pickGalleryBtn} 
-            onPress={handlePickFromGallery}
-            disabled={isProcessing}
-          >
-            <Ionicons name="folder-open-outline" size={20} color={THEME.colors.text} />
-            <Text style={styles.pickGalleryText}>Thư viện</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.mainCameraBtn} 
-            onPress={handleTakePhoto}
-            disabled={isProcessing}
-          >
-            <Ionicons name="camera" size={26} color={THEME.colors.background} />
-            <Text style={styles.mainCameraText}>Chụp ảnh</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Modal chi tiết ảnh */}
-        <PhotoDetailModal
-          visible={selectedPhoto !== null}
-          photo={selectedPhoto}
-          onClose={() => setSelectedPhoto(null)}
-          onDelete={handleDeletePhoto}
-          onRegenerateAI={handleRegenerateAI}
-          isGeneratingAI={isProcessing}
+      ) : (
+        <OverviewMapView
+          photos={photos}
+          onSelectPhoto={(p) => {
+            setSelectedPhoto(p);
+            setDetailVisible(true);
+          }}
+          onOpenCapture={() => setCaptureModalVisible(true)}
         />
+      )}
 
-        {/* Modal nhập Gemini API Key */}
-        <ApiKeyModal
-          visible={isKeyModalOpen}
-          currentKey={apiKey}
-          onClose={() => setIsKeyModalOpen(false)}
-          onKeySaved={(newKey) => setApiKey(newKey)}
-        />
+      {/* Nút FAB chụp ảnh tròn nổi bật */}
+      <TouchableOpacity
+        style={styles.fabBtn}
+        onPress={() => setCaptureModalVisible(true)}
+        activeOpacity={0.85}
+      >
+        <Ionicons name="camera" size={26} color="#ffffff" />
+        <Text style={styles.fabText}>Chụp ảnh</Text>
+      </TouchableOpacity>
 
-        {/* Loading Overlay khi xử lý GPS và AI */}
-        {isProcessing && (
-          <View style={styles.loadingOverlay}>
-            <View style={styles.loadingCard}>
-              <ActivityIndicator size="large" color={THEME.colors.primary} />
-              <Text style={styles.loadingTitle}>Đang xử lý bức ảnh</Text>
-              <Text style={styles.loadingStep}>{processingStatus}</Text>
-            </View>
+      {/* Modal Bottom Sheet chọn nguồn ảnh */}
+      <Modal
+        visible={captureModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setCaptureModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setCaptureModalVisible(false)}
+        >
+          <View style={styles.captureSheet}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>Thêm ảnh kỷ niệm mới</Text>
+            <Text style={styles.sheetSubtitle}>
+              Tự động lưu vị trí GPS và phân tích ảnh với Gemini AI
+            </Text>
+
+            <TouchableOpacity
+              style={styles.sheetOption}
+              onPress={handleTakePhoto}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.sheetIconBox, { backgroundColor: '#eff6ff' }]}>
+                <Ionicons name="camera" size={22} color="#2563eb" />
+              </View>
+              <View style={styles.sheetOptionText}>
+                <Text style={styles.sheetOptionTitle}>Chụp bằng Máy ảnh</Text>
+                <Text style={styles.sheetOptionDesc}>Mở camera để chụp trực tiếp</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.sheetOption}
+              onPress={handlePickFromGallery}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.sheetIconBox, { backgroundColor: '#f5f3ff' }]}>
+                <Ionicons name="images" size={22} color="#7c3aed" />
+              </View>
+              <View style={styles.sheetOptionText}>
+                <Text style={styles.sheetOptionTitle}>Chọn từ Thư viện ảnh</Text>
+                <Text style={styles.sheetOptionDesc}>Tải ảnh có sẵn trong máy</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.sheetCancelBtn}
+              onPress={() => setCaptureModalVisible(false)}
+            >
+              <Text style={styles.sheetCancelText}>Huỷ</Text>
+            </TouchableOpacity>
           </View>
-        )}
-      </SafeAreaView>
-    </SafeAreaProvider>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Modal xử lý Loading khi AI đang phân tích ảnh */}
+      <Modal visible={isProcessing} transparent={true} animationType="fade">
+        <View style={styles.processingOverlay}>
+          <View style={styles.processingCard}>
+            <ActivityIndicator size="large" color="#6366f1" />
+            <Text style={styles.processingTitle}>Đang xử lý bức ảnh</Text>
+            <Text style={styles.processingSub}>{processingStatus}</Text>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal chi tiết bức ảnh & Bản đồ */}
+      <PhotoDetailModal
+        visible={detailVisible}
+        photo={selectedPhoto}
+        onClose={() => setDetailVisible(false)}
+        onDelete={handleDeletePhoto}
+        onUpdatePhoto={handleUpdatePhoto}
+      />
+
+      {/* Modal cấu hình Gemini API Key */}
+      <ApiKeyModal
+        visible={apiKeyModalVisible}
+        onClose={() => setApiKeyModalVisible(false)}
+      />
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeContainer: {
+  container: {
     flex: 1,
-    backgroundColor: THEME.colors.background,
+    backgroundColor: '#f8fafc',
+    paddingTop: Platform.OS === 'android' ? 30 : 0,
   },
-  topHeader: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: THEME.spacing.lg,
+    paddingHorizontal: 18,
     paddingVertical: 12,
+    backgroundColor: '#ffffff',
     borderBottomWidth: 1,
-    borderBottomColor: THEME.colors.border,
-    backgroundColor: THEME.colors.surface,
+    borderBottomColor: '#f1f5f9',
   },
-  appBrand: {
+  brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
   },
-  brandIconWrap: {
+  brandIconBg: {
     width: 38,
     height: 38,
-    borderRadius: THEME.borderRadius.md,
-    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+    borderRadius: 12,
+    backgroundColor: '#2563eb',
     justifyContent: 'center',
     alignItems: 'center',
+    marginRight: 10,
+    shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  brandTitle: {
-    color: THEME.colors.text,
-    fontSize: 16,
+  headerTitle: {
+    fontSize: 18,
     fontWeight: '800',
-    letterSpacing: 0.3,
+    color: '#0f172a',
   },
-  brandSubtitle: {
-    color: THEME.colors.textMuted,
+  headerSubtitle: {
     fontSize: 11,
+    color: '#64748b',
     fontWeight: '500',
   },
-  headerActions: {
+  headerRightActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
   },
   headerIconBtn: {
+    padding: 8,
+    marginLeft: 4,
+    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+  },
+  tabContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: THEME.borderRadius.full,
-    backgroundColor: THEME.colors.surfaceHighlight,
-    borderWidth: 1,
-    borderColor: THEME.colors.border,
+    backgroundColor: '#e2e8f0',
+    borderRadius: 14,
+    padding: 4,
+    marginHorizontal: 16,
+    marginVertical: 10,
   },
-  keyActiveBtn: {
-    backgroundColor: 'rgba(168, 85, 247, 0.15)',
-    borderColor: 'rgba(168, 85, 247, 0.4)',
-  },
-  keyBtnLabel: {
-    color: THEME.colors.textSecondary,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  tabBar: {
-    flexDirection: 'row',
-    paddingHorizontal: THEME.spacing.lg,
-    paddingVertical: 8,
-    backgroundColor: THEME.colors.surface,
-    gap: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: THEME.colors.border,
-  },
-  tabButton: {
+  tabBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
-    borderRadius: THEME.borderRadius.md,
-    backgroundColor: THEME.colors.surfaceHighlight,
-    gap: 6,
+    borderRadius: 10,
   },
-  tabButtonActive: {
-    backgroundColor: 'rgba(56, 189, 248, 0.15)',
-    borderWidth: 1,
-    borderColor: THEME.colors.primary,
+  tabBtnActive: {
+    backgroundColor: '#0f172a',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
   },
-  tabText: {
-    color: THEME.colors.textSecondary,
+  tabBtnText: {
     fontSize: 13,
     fontWeight: '600',
+    color: '#64748b',
+    marginLeft: 6,
   },
-  tabTextActive: {
-    color: THEME.colors.primary,
+  tabBtnTextActive: {
+    color: '#ffffff',
+    fontWeight: '700',
   },
-  mainContent: {
+  listWrapper: {
     flex: 1,
   },
-  listContainer: {
-    padding: THEME.spacing.lg,
-    paddingBottom: 100,
+  flatListContent: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 90,
+  },
+  loadingCenter: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingMainText: {
+    marginTop: 10,
+    fontSize: 13,
+    color: '#64748b',
   },
   emptyContainer: {
-    alignItems: 'center',
+    flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: 30,
-    paddingTop: 80,
+    alignItems: 'center',
+    paddingHorizontal: 36,
   },
   emptyIconCircle: {
     width: 90,
     height: 90,
     borderRadius: 45,
-    backgroundColor: 'rgba(56, 189, 248, 0.1)',
+    backgroundColor: '#e2e8f0',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.3)',
+    marginBottom: 16,
   },
   emptyTitle: {
-    color: THEME.colors.text,
     fontSize: 18,
     fontWeight: '700',
+    color: '#1e293b',
     marginBottom: 8,
-    textAlign: 'center',
   },
-  emptyDesc: {
-    color: THEME.colors.textSecondary,
-    fontSize: 14,
+  emptyText: {
+    fontSize: 13,
     lineHeight: 20,
+    color: '#64748b',
     textAlign: 'center',
     marginBottom: 24,
   },
-  emptyCaptureBtn: {
+  emptyActionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: THEME.colors.primary,
+    backgroundColor: '#2563eb',
     paddingHorizontal: 22,
-    paddingVertical: 12,
-    borderRadius: THEME.borderRadius.full,
+    paddingVertical: 14,
+    borderRadius: 14,
+    shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
   },
-  emptyCaptureBtnText: {
-    color: THEME.colors.background,
+  emptyActionBtnText: {
+    color: '#ffffff',
+    fontSize: 15,
     fontWeight: '700',
-    fontSize: 14,
+    marginLeft: 8,
   },
-  mapTabWrapper: {
-    flex: 1,
-  },
-  fullMap: {
-    width: '100%',
-    height: '100%',
-  },
-  webMapOverview: {
-    flex: 1,
-    alignItems: 'center',
-    padding: 20,
-  },
-  webMapTitle: {
-    color: THEME.colors.text,
-    fontSize: 18,
-    fontWeight: '700',
-    marginTop: 10,
-  },
-  webMapSub: {
-    color: THEME.colors.textSecondary,
-    fontSize: 13,
-    marginTop: 4,
-  },
-  webMapItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    backgroundColor: THEME.colors.surface,
-    borderRadius: THEME.borderRadius.md,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: THEME.colors.border,
-    gap: 12,
-  },
-  webMapThumb: {
-    width: 50,
-    height: 50,
-    borderRadius: THEME.borderRadius.sm,
-  },
-  webMapItemAddr: {
-    color: THEME.colors.text,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  webMapItemCoords: {
-    color: THEME.colors.textMuted,
-    fontSize: 11,
-    marginTop: 3,
-  },
-  bottomActionBar: {
+  fabBtn: {
     position: 'absolute',
     bottom: 24,
-    left: 20,
     right: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 14,
-  },
-  pickGalleryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: THEME.colors.surfaceHighlight,
-    paddingHorizontal: 18,
+    backgroundColor: '#2563eb',
+    paddingHorizontal: 20,
     paddingVertical: 14,
-    borderRadius: THEME.borderRadius.full,
-    borderWidth: 1,
-    borderColor: THEME.colors.border,
-    shadowColor: '#000',
+    borderRadius: 30,
+    shadowColor: '#2563eb',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
     elevation: 6,
   },
-  pickGalleryText: {
-    color: THEME.colors.text,
+  fabText: {
+    color: '#ffffff',
+    fontSize: 15,
     fontWeight: '700',
-    fontSize: 14,
+    marginLeft: 8,
   },
-  mainCameraBtn: {
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  captureSheet: {
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 34,
+  },
+  sheetHandle: {
+    width: 36,
+    height: 4,
+    backgroundColor: '#cbd5e1',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  sheetTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0f172a',
+    textAlign: 'center',
+  },
+  sheetSubtitle: {
+    fontSize: 12,
+    color: '#64748b',
+    textAlign: 'center',
+    marginTop: 4,
+    marginBottom: 20,
+  },
+  sheetOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: THEME.colors.primary,
-    paddingHorizontal: 26,
     paddingVertical: 14,
-    borderRadius: THEME.borderRadius.full,
-    shadowColor: THEME.colors.primary,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    elevation: 8,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: '#f8fafc',
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
   },
-  mainCameraText: {
-    color: THEME.colors.background,
-    fontWeight: '800',
-    fontSize: 15,
-  },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+  sheetIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 9999,
   },
-  loadingCard: {
-    backgroundColor: THEME.colors.surface,
-    padding: 24,
-    borderRadius: THEME.borderRadius.lg,
+  sheetOptionText: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  sheetOptionTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#0f172a',
+  },
+  sheetOptionDesc: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 2,
+  },
+  sheetCancelBtn: {
+    marginTop: 10,
+    paddingVertical: 14,
     alignItems: 'center',
-    width: width * 0.8,
-    borderWidth: 1,
-    borderColor: THEME.colors.border,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 14,
   },
-  loadingTitle: {
-    color: THEME.colors.text,
+  sheetCancelText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  processingOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  processingCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 28,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 320,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  processingTitle: {
     fontSize: 16,
     fontWeight: '700',
-    marginTop: 16,
+    color: '#0f172a',
+    marginTop: 14,
+    marginBottom: 6,
   },
-  loadingStep: {
-    color: THEME.colors.primary,
+  processingSub: {
     fontSize: 13,
-    marginTop: 8,
+    color: '#6366f1',
     textAlign: 'center',
   },
 });

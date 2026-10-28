@@ -1,4 +1,4 @@
-import MapView, { Marker, Callout, UrlTile } from 'react-native-maps';
+import MapView, { Marker, Callout } from 'react-native-maps';
 
-export { Marker, Callout, UrlTile };
+export { Marker, Callout };
 export default MapView;

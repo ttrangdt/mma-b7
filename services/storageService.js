@@ -3,7 +3,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const STORAGE_KEYS = {
   PHOTOS: '@ai_photo_memories_photos',
   API_KEY: '@ai_photo_memories_gemini_key',
-  VIETMAP_KEY: '@ai_photo_memories_vietmap_key',
 };
 
 /**
@@ -86,31 +85,6 @@ export const saveStoredApiKey = async (key) => {
     return true;
   } catch (error) {
     console.error('Lỗi khi lưu API Key:', error);
-    return false;
-  }
-};
-
-/**
- * Lấy VietMap API Key đã lưu
- */
-export const getStoredVietmapKey = async () => {
-  try {
-    return await AsyncStorage.getItem(STORAGE_KEYS.VIETMAP_KEY);
-  } catch (error) {
-    console.error('Lỗi khi đọc VietMap API Key:', error);
-    return null;
-  }
-};
-
-/**
- * Lưu VietMap API Key
- */
-export const saveStoredVietmapKey = async (key) => {
-  try {
-    await AsyncStorage.setItem(STORAGE_KEYS.VIETMAP_KEY, key.trim());
-    return true;
-  } catch (error) {
-    console.error('Lỗi khi lưu VietMap API Key:', error);
     return false;
   }
 };

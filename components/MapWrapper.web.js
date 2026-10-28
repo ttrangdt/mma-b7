@@ -4,16 +4,16 @@ import { Ionicons } from '@expo/vector-icons';
 
 /**
  * Web fallback component for Expo Snack Web preview
- * Giải quyết lỗi "o.UIManager.hasViewManagerConfig is not a function" trên Snack Web
+ * Tránh lỗi "o.UIManager.hasViewManagerConfig is not a function" trên Snack Web
  */
 const MapView = ({ style, initialRegion, children }) => {
   return (
     <View style={[styles.container, style]}>
       <View style={styles.webBadge}>
         <Ionicons name="map-outline" size={24} color="#38BDF8" />
-        <Text style={styles.webTitle}>Bản đồ Google Maps (Chế độ xem trước Web)</Text>
+        <Text style={styles.webTitle}>Google Maps (Xem trước Web)</Text>
         <Text style={styles.webSub}>
-          {initialRegion ? `Tọa độ trung tâm: ${initialRegion.latitude?.toFixed(4)}, ${initialRegion.longitude?.toFixed(4)}` : ''}
+          {initialRegion ? `Tọa độ: ${initialRegion.latitude?.toFixed(4)}, ${initialRegion.longitude?.toFixed(4)}` : ''}
         </Text>
       </View>
       <View style={styles.markerContainer}>
@@ -50,8 +50,6 @@ export const Marker = ({ coordinate, title, description, onCalloutPress, childre
 export const Callout = ({ children }) => {
   return <View style={styles.calloutWrapper}>{children}</View>;
 };
-
-export const UrlTile = () => null;
 
 const styles = StyleSheet.create({
   container: {

@@ -9,53 +9,44 @@ import {
   Linking, 
   Alert,
   KeyboardAvoidingView,
-  Platform,
-  ScrollView 
+  Platform 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../constants/theme';
-import { saveStoredApiKey, saveStoredVietmapKey } from '../services/storageService';
+import { saveStoredApiKey } from '../services/storageService';
 
-export default function ApiKeyModal({ 
-  visible, 
-  currentKey, 
-  currentVietmapKey, 
-  onClose, 
-  onKeySaved,
-  onVietmapKeySaved 
-}) {
+export default function ApiKeyModal({ visible, currentKey, onClose, onKeySaved }) {
   const [apiKey, setApiKey] = useState(currentKey || '');
-  const [vietmapKey, setVietmapKey] = useState(currentVietmapKey || '');
 
   useEffect(() => {
     setApiKey(currentKey || '');
-    setVietmapKey(currentVietmapKey || '');
-  }, [currentKey, currentVietmapKey, visible]);
+  }, [currentKey, visible]);
 
   const handleSave = async () => {
-    if (apiKey.trim()) {
-      await saveStoredApiKey(apiKey.trim());
-      onKeySaved && onKeySaved(apiKey.trim());
+    if (!apiKey.trim()) {
+      if (Platform.OS === 'web') {
+        window.alert('Vui lòng nhập API Key hợp lệ.');
+      } else {
+        Alert.alert('Cảnh báo', 'Vui lòng nhập API Key hợp lệ.');
+      }
+      return;
     }
-    if (vietmapKey.trim()) {
-      await saveStoredVietmapKey(vietmapKey.trim());
-      onVietmapKeySaved && onVietmapKeySaved(vietmapKey.trim());
-    }
-
-    if (Platform.OS === 'web') {
-      window.alert('Đã lưu cấu hình API Key thành công!');
+    const success = await saveStoredApiKey(apiKey.trim());
+    if (success) {
+      if (Platform.OS === 'web') {
+        window.alert('Đã lưu Gemini API Key thành công!');
+      } else {
+        Alert.alert('Thành công', 'Đã lưu Gemini API Key vào máy!');
+      }
+      onKeySaved(apiKey.trim());
+      onClose();
     } else {
-      Alert.alert('Thành công', 'Đã lưu cấu hình API Key vào máy!');
+      Alert.alert('Lỗi', 'Không thể lưu API Key vào AsyncStorage.');
     }
-    onClose();
   };
 
   const openGoogleAiStudio = () => {
     Linking.openURL('https://aistudio.google.com/app/apikey');
-  };
-
-  const openVietmapDocs = () => {
-    Linking.openURL('https://maps.vietmap.vn');
   };
 
   return (
@@ -67,70 +58,39 @@ export default function ApiKeyModal({
         <View style={styles.modalBox}>
           <View style={styles.header}>
             <View style={styles.titleRow}>
-              <Ionicons name="settings-sharp" size={20} color={THEME.colors.primary} />
-              <Text style={styles.title}>Cấu hình API Keys</Text>
+              <Ionicons name="sparkles" size={20} color={THEME.colors.accent} />
+              <Text style={styles.title}>Cấu hình Gemini AI Key</Text>
             </View>
             <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
               <Ionicons name="close" size={22} color={THEME.colors.textMuted} />
             </TouchableOpacity>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false}>
-            {/* 1. Mục Gemini AI Key */}
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Ionicons name="sparkles" size={16} color={THEME.colors.accent} />
-                <Text style={styles.sectionTitle}>1. Google Gemini AI Key</Text>
-              </View>
-              <Text style={styles.sectionDesc}>
-                Bắt buộc bắt đầu bằng <Text style={{ color: THEME.colors.accent, fontWeight: '700' }}>AIzaSy...</Text> để phân tích hình ảnh.
-              </Text>
-              <TextInput
-                style={styles.input}
-                value={apiKey}
-                onChangeText={setApiKey}
-                placeholder="Dán AI Studio key (AIzaSy...)"
-                placeholderTextColor={THEME.colors.textMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <TouchableOpacity style={styles.linkRow} onPress={openGoogleAiStudio}>
-                <Ionicons name="link-outline" size={14} color={THEME.colors.primary} />
-                <Text style={styles.linkText}>Lấy Gemini Key tại Google AI Studio</Text>
-              </TouchableOpacity>
-            </View>
+          <Text style={styles.description}>
+            Để phân tích ảnh tự động, bạn cần lấy Gemini API Key miễn phí tại Google AI Studio. Key hợp lệ luôn bắt đầu bằng <Text style={{ color: THEME.colors.accent, fontWeight: '700' }}>AIzaSy...</Text>
+          </Text>
 
-            {/* 2. Mục VietMap Key */}
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Ionicons name="map" size={16} color={THEME.colors.success} />
-                <Text style={styles.sectionTitle}>2. VietMap API Key (Tùy chọn)</Text>
-              </View>
-              <Text style={styles.sectionDesc}>
-                Hiển thị lớp bản đồ VietMap Tiles & tìm địa chỉ chi tiết theo chuẩn VietMap Việt Nam.
-              </Text>
-              <TextInput
-                style={styles.input}
-                value={vietmapKey}
-                onChangeText={setVietmapKey}
-                placeholder="Nhập VietMap API Key..."
-                placeholderTextColor={THEME.colors.textMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <TouchableOpacity style={styles.linkRow} onPress={openVietmapDocs}>
-                <Ionicons name="link-outline" size={14} color={THEME.colors.primary} />
-                <Text style={styles.linkText}>Tìm hiểu VietMap API (maps.vietmap.vn)</Text>
-              </TouchableOpacity>
-            </View>
-          </ScrollView>
+          <TextInput
+            style={styles.input}
+            value={apiKey}
+            onChangeText={setApiKey}
+            placeholder="Dán API Key (AIzaSy...)"
+            placeholderTextColor={THEME.colors.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+
+          <TouchableOpacity style={styles.linkRow} onPress={openGoogleAiStudio}>
+            <Ionicons name="link-outline" size={16} color={THEME.colors.primary} />
+            <Text style={styles.linkText}>Lấy Key tại Google AI Studio (Create in new project)</Text>
+          </TouchableOpacity>
 
           <View style={styles.btnRow}>
             <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
               <Text style={styles.cancelBtnText}>Đóng</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-              <Text style={styles.saveBtnText}>Lưu cấu hình</Text>
+              <Text style={styles.saveBtnText}>Lưu Key</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -149,7 +109,6 @@ const styles = StyleSheet.create({
   },
   modalBox: {
     width: '100%',
-    maxHeight: '85%',
     backgroundColor: THEME.colors.surface,
     borderRadius: THEME.borderRadius.lg,
     borderWidth: 1,
@@ -177,28 +136,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
-  section: {
-    marginBottom: THEME.spacing.lg,
-    paddingBottom: THEME.spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: THEME.colors.border,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 4,
-  },
-  sectionTitle: {
-    color: THEME.colors.text,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  sectionDesc: {
+  description: {
     color: THEME.colors.textSecondary,
-    fontSize: 12,
-    lineHeight: 17,
-    marginBottom: 8,
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: THEME.spacing.lg,
   },
   input: {
     backgroundColor: THEME.colors.surfaceHighlight,
@@ -206,16 +148,16 @@ const styles = StyleSheet.create({
     borderColor: THEME.colors.border,
     borderRadius: THEME.borderRadius.md,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 12,
     color: THEME.colors.text,
-    fontSize: 13,
-    marginBottom: 6,
+    fontSize: 14,
+    marginBottom: 12,
   },
   linkRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
+    gap: 6,
+    marginBottom: THEME.spacing.xl,
   },
   linkText: {
     color: THEME.colors.primary,
@@ -226,7 +168,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: 12,
-    marginTop: 10,
   },
   cancelBtn: {
     paddingHorizontal: 16,

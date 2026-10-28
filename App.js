@@ -22,14 +22,13 @@ import {
   savePhoto, 
   deletePhoto, 
   clearAllPhotos, 
-  getStoredApiKey,
-  getStoredVietmapKey 
+  getStoredApiKey 
 } from './services/storageService';
 import { getCurrentLocationAndAddress } from './services/locationService';
 import { generateImageDescription } from './services/geminiService';
 import { CONFIG } from './config';
 
-import MapView, { Marker, Callout, UrlTile } from './components/MapWrapper';
+import MapView, { Marker, Callout } from './components/MapWrapper';
 
 import PhotoCard from './components/PhotoCard';
 import PhotoDetailModal from './components/PhotoDetailModal';
@@ -40,7 +39,6 @@ const { width } = Dimensions.get('window');
 export default function App() {
   const [photos, setPhotos] = useState([]);
   const [apiKey, setApiKey] = useState(CONFIG.GEMINI_API_KEY || '');
-  const [vietmapKey, setVietmapKey] = useState(CONFIG.VIETMAP_API_KEY || '');
   const [activeTab, setActiveTab] = useState('gallery'); // 'gallery' | 'map'
   const [selectedPhoto, setSelectedPhoto] = useState(null);
   const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
@@ -65,13 +63,6 @@ export default function App() {
       } else if (CONFIG.GEMINI_API_KEY) {
         setApiKey(CONFIG.GEMINI_API_KEY);
       }
-
-      const storedVmKey = await getStoredVietmapKey();
-      if (storedVmKey) {
-        setVietmapKey(storedVmKey);
-      } else if (CONFIG.VIETMAP_API_KEY) {
-        setVietmapKey(CONFIG.VIETMAP_API_KEY);
-      }
     } catch (e) {
       console.error('Lỗi khởi tạo ứng dụng:', e);
     }
@@ -84,9 +75,9 @@ export default function App() {
     try {
       setIsProcessing(true);
       
-      // Bước 1: Lấy vị trí GPS & Địa chỉ (kèm VietMap nếu có)
-      setProcessingStatus('Đang lấy vị trí chụp ảnh (GPS & VietMap)...');
-      const locationData = await getCurrentLocationAndAddress(vietmapKey);
+      // Bước 1: Lấy vị trí GPS & Địa chỉ
+      setProcessingStatus('Đang lấy vị trí chụp ảnh (GPS)...');
+      const locationData = await getCurrentLocationAndAddress();
 
       // Bước 2: Gọi Gemini AI phân tích hình ảnh
       setProcessingStatus('Gemini AI đang phân tích và sinh mô tả...');
@@ -415,14 +406,6 @@ export default function App() {
                   showsUserLocation={true}
                   showsMyLocationButton={true}
                 >
-                  {vietmapKey && vietmapKey.trim() !== '' ? (
-                    <UrlTile
-                      urlTemplate={`https://maps.vietmap.vn/api/tm/{z}/{x}/{y}@2x.png?apikey=${vietmapKey.trim()}`}
-                      maximumZ={19}
-                      flipY={false}
-                      zIndex={1}
-                    />
-                  ) : null}
                   {photos.map((item) => (
                     <Marker
                       key={item.id}
@@ -498,19 +481,16 @@ export default function App() {
           photo={selectedPhoto}
           onClose={() => setSelectedPhoto(null)}
           onDelete={handleDeletePhoto}
-          vietmapKey={vietmapKey}
           onRegenerateAI={handleRegenerateAI}
           isGeneratingAI={isProcessing}
         />
 
-        {/* Modal nhập Gemini & VietMap API Key */}
+        {/* Modal nhập Gemini API Key */}
         <ApiKeyModal
           visible={isKeyModalOpen}
           currentKey={apiKey}
-          currentVietmapKey={vietmapKey}
           onClose={() => setIsKeyModalOpen(false)}
           onKeySaved={(newKey) => setApiKey(newKey)}
-          onVietmapKeySaved={(newVmKey) => setVietmapKey(newVmKey)}
         />
 
         {/* Loading Overlay khi xử lý GPS và AI */}

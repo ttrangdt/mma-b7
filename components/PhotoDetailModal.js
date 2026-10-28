@@ -13,7 +13,7 @@ import {
   Alert 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import MapView, { Marker, UrlTile } from './MapWrapper';
+import MapView, { Marker } from './MapWrapper';
 import { THEME } from '../constants/theme';
 
 const { width } = Dimensions.get('window');
@@ -23,7 +23,6 @@ export default function PhotoDetailModal({
   visible, 
   onClose, 
   onDelete, 
-  vietmapKey, 
   onRegenerateAI, 
   isGeneratingAI 
 }) {
@@ -121,22 +120,15 @@ export default function PhotoDetailModal({
             <Text style={styles.aiBoxContent}>{photo.description}</Text>
           </View>
 
-          {/* Khối vị trí và Google Maps / VietMap */}
+          {/* Khối vị trí và Google Maps */}
           <View style={styles.mapSection}>
             <View style={styles.mapSectionHeader}>
               <View style={styles.mapHeaderLeft}>
                 <Ionicons name="location" size={20} color={THEME.colors.primary} />
-                <Text style={styles.mapSectionTitle}>
-                  {vietmapKey ? 'Bản đồ VietMap' : 'Bản đồ vị trí chụp'}
-                </Text>
-                {vietmapKey ? (
-                  <View style={styles.vietmapBadge}>
-                    <Text style={styles.vietmapBadgeText}>VietMap Tile</Text>
-                  </View>
-                ) : null}
+                <Text style={styles.mapSectionTitle}>Vị trí chụp trên Google Maps</Text>
               </View>
               <TouchableOpacity onPress={openGoogleMapsExternal} style={styles.extMapLink}>
-                <Text style={styles.extMapText}>Mở Maps</Text>
+                <Text style={styles.extMapText}>Mở app Maps</Text>
                 <Ionicons name="open-outline" size={14} color={THEME.colors.primary} />
               </TouchableOpacity>
             </View>
@@ -146,7 +138,7 @@ export default function PhotoDetailModal({
               Tọa độ: {lat.toFixed(6)}, {lng.toFixed(6)}
             </Text>
 
-            {/* Map View với VietMap Tile layer */}
+            {/* Google Map View */}
             <View style={styles.mapContainer}>
               {MapView && Marker && Platform.OS !== 'web' ? (
                 <MapView
@@ -160,14 +152,6 @@ export default function PhotoDetailModal({
                   scrollEnabled={false}
                   zoomEnabled={false}
                 >
-                  {vietmapKey && vietmapKey.trim() !== '' ? (
-                    <UrlTile
-                      urlTemplate={`https://maps.vietmap.vn/api/tm/{z}/{x}/{y}@2x.png?apikey=${vietmapKey.trim()}`}
-                      maximumZ={19}
-                      flipY={false}
-                      zIndex={1}
-                    />
-                  ) : null}
                   <Marker
                     coordinate={{ latitude: lat, longitude: lng }}
                     title="Vị trí bức ảnh"
@@ -311,20 +295,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    flex: 1,
-  },
-  vietmapBadge: {
-    backgroundColor: 'rgba(16, 185, 129, 0.2)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: THEME.borderRadius.sm,
-    borderWidth: 1,
-    borderColor: THEME.colors.success,
-  },
-  vietmapBadgeText: {
-    color: THEME.colors.success,
-    fontSize: 10,
-    fontWeight: '700',
   },
   mapSectionTitle: {
     color: THEME.colors.text,

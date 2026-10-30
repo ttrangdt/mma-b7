@@ -1,3 +1,4 @@
+import { registerRootComponent } from 'expo';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
@@ -776,3 +777,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+
+registerRootComponent(App);
